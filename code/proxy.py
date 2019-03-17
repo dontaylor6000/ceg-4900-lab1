@@ -1,63 +1,88 @@
 #!/usr/bin/python2.7
 
-# Code sample from https://nostarch.com/blackhatpython
-# Forked from https://github.com/WillPennell/Python
+"""
+tcp-client.py
 
+Code sample from https://nostarch.com/blackhatpython
+Forked from https://github.com/WillPennell/Python
 
+@author Will Pennel
+@author Don Taylor
+
+@updated: March 17, 2019
+"""
 import sys
 import socket
-import threading
+import multiprocessing
 
-# this is a pretty hex dumping function directly taken from
-# http://code.activestate.com/recipes/142812-hex-dumper/
+
 def hexdump(src, length=16):
+    """ This is a pretty hex dumping function directly taken from
+    http://code.activestate.com/recipes/142812-hex-dumper/
+
+    :param src: buffer of raw binary values
+    :param length: number of bytes to consume
+    """
     result = []
     digits = 4 if isinstance(src, unicode) else 2
 
     for i in xrange(0, len(src), length):
         s = src[i:i+length]
-        hexa = b' '.join(["%0*X" % (digits, ord(x))  for x in s])
-        text = b''.join([x if 0x20 <= ord(x) < 0x7F else b'.'  for x in s])
-        result.append( b"%04X   %-*s   %s" % (i, length*(digits + 1), hexa, text) )
+        hexa = b' '.join(["%0*X" % (digits, ord(x)) for x in s])
+        text = b''.join([x if 0x20 <= ord(x) < 0x7F else b'.' for x in s])
+        result.append(b"%04X   %-*s   %s" % (i, length*(digits + 1), hexa, text))
 
     print b'\n'.join(result)
 
-# main server loop for handling connections and forking a process to handler
-def server_loop(local_host,local_port,remote_host,remote_port,receive_first):
-    
+
+def server_loop(local_host, local_port, remote_host, remote_port, receive_first):
+    """ Main server loop for handling connections and forking a process to handler
+
+    :param local_host:
+    :param local_port:
+    :param remote_host:
+    :param remote_port:
+    :param receive_first:
+    :return:
+    """
     # create the server object
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     
     # lets see if we can stand up the server
     try:
-        server.bind((local_host,local_port))
-    except:
+        server.bind((local_host, local_port))
+    except socket.error:
         print "[!] Failed to listen on %s:%d" % (local_host, local_port)
         print "[!] Check for other listening sockets or correct permissions"
-        sys.exit(0)
+        sys.exit(1)
     
     # listen with 5 backlogged--queued--connections
     server.listen(5)
     
     while True:
         client_socket, addr = server.accept()
+        print"[+] Received incoming connections from %s:%d" % (addr[0], addr[1])
         
-        # print out the local connection information 
-        print"[+] Received incoming connections from %s:%d" % (addr[0],addr[1])
-        
-        # start a new thread to talk to the remote host
-        proxy_thread = threading.Thread(target=proxy_handler,args=(client_socket,remote_host,remote_port,receive_first))
-        
+        # start a new process to talk to the remote host
+        proxy_thread = multiprocessing.Process(target=proxy_handler,
+                                               args=(client_socket, remote_host, remote_port, receive_first))
         proxy_thread.start()
 
-def proxy_handler(client_socket,remote_host,remote_port,receive_first):
-    # connect to remote host
+
+def proxy_handler(client_socket, remote_host, remote_port, receive_first):
+    """ Handler to connect to a remote host
+
+    :param client_socket: python socket object representing local address:port bind
+    :param remote_host: remote host ip address
+    :param remote_port: remote port value
+    :param receive_first: boolean value
+    """
     remote_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     
     try:
-        remote_socket.connect((remote_host,remote_port))
+        remote_socket.connect((remote_host, remote_port))
         print "[+] Remote Connection established"
-    except:
+    except socket.error:
         # something went wrong, eject!
         print "[!] Unable to connect to remote host, exiting"
         sys.exit(0)
@@ -107,9 +132,15 @@ def proxy_handler(client_socket,remote_host,remote_port,receive_first):
             client_socket.close()
             print "[*] No more data, closing connections"       
             break
-    
+
+
 def receive_from(connection):
-    buffer = ""
+    """ Handler for receiving client connection information
+
+    :param connection: python instance of a socket connection
+    :return buf: a string representation of the data received from the client
+    """
+    buf = ""
     
     # set a two second timeout; this my need to be adjusted
     connection.settimeout(2)
@@ -120,46 +151,56 @@ def receive_from(connection):
             data = connection.recv(4096)
             if not data:
                 break
-            buffer += data
-    except:
+            buf += data
+    except socket.error:
         pass
-    return buffer
+    return buf
 
-# handler function to modify server responses
+
 def response_handler(remote_buffer):
+    """ Handler function to modify server responses
+
+    :param remote_buffer: buffer object of bytes received from a client connection
+    :return remote_buffer: buffer object of bytes received from a client connection
+    """
     # perform packet modifications here
     return remote_buffer
 
-# handler function to modify client requests
+
 def request_handler(local_buffer):
+    """ Handler function to modify client requests
+
+    :param local_buffer: buffer object representing the server side
+    :return local_buffer: buffer object representing the server side
+    """
     # perform packet modifications here
     return local_buffer
-        
-def main():
-    # cursory check of command line args
-    if len(sys.argv[1:]) != 5:
-        print "Usage:   ./proxy.py [localhost] [localport] [remotehost] [remoteport] [receive_first]"
-        print "Example: ./proxy.py 127.0.0.1 9000 10.11.132.1 9000 True"
-        sys.exit(0)
-    
-    # set up listening parameters
-    local_host = sys.argv[1]
-    local_port = int(sys.argv[2])
-    
-    # set up remote targets
-    remote_host = sys.argv[3]
-    remote_port = int(sys.argv[4])
-    
-    # this tells our proxy to connect and receive data before sending to the remote host
-    receive_first = sys.argv[5]
-    
-    if "True" in receive_first:
-        receive_first = True
-    else:
-        receive_first = False
-        
-    # now spin up our listening socket
-    server_loop(local_host,local_port,remote_host,remote_port,receive_first)
-    
+
+
+def main(local_host, local_port, remote_host, remote_port, receive_first):
+    """  Spin up a listening socket
+
+    :param local_host: local ip value to bind to
+    :param local_port: local port value to bind to
+    :param remote_host: remote ip value to bind to
+    :param remote_port: remote port to bind to
+    :param recieve_first: boolean of whether or not to attempt receive action first
+    """
+
+    server_loop(local_host, local_port, remote_host, remote_port, receive_first)
+
+
 if __name__ == "__main__":
-    main()
+    from argparse import ArgumentParser
+    description = """
+    Simple proxy server creation script for accepting and forwarding traffic to alternate hosts in a network.
+    """
+    parser = ArgumentParser()
+    parser.add_argument('local_host', help='local ip value to bind to')
+    parser.add_argument('local_port', type=int, help='local port value to bind to')
+    parser.add_argument('remote_host', help='remote ip value to bind to')
+    parser.add_argument('remote_port', type=int, help='remote port to bind to')
+    parser.add_argument('receive_first', default=False, action='store_true',
+                        help='boolean of whether or not to attempt receive action first')
+    args = parser.parse_args()
+    main(args.local_host, args.local_port, args.remote_host, args.remote_port, args.receive_first)
