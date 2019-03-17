@@ -200,7 +200,7 @@ if __name__ == "__main__":
     parser.add_argument('local_port', type=int, help='local port value to bind to')
     parser.add_argument('remote_host', help='remote ip value to bind to')
     parser.add_argument('remote_port', type=int, help='remote port to bind to')
-    parser.add_argument('receive_first', default=False, action='store_true',
+    parser.add_argument('--receive_first', default=False, action='store_true',
                         help='boolean of whether or not to attempt receive action first')
     args = parser.parse_args()
     main(args.local_host, args.local_port, args.remote_host, args.remote_port, args.receive_first)
